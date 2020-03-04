@@ -56,6 +56,8 @@ public class GraphQLConversionUtils {
     private final Map<Class, GraphQLEnumType> enumConversions = new HashMap<>();
     private final Map<String, GraphQLList> mapConversions = new HashMap<>();
 
+    private final Set<String> existingNames = new HashSet<>();
+
     public GraphQLConversionUtils(EntityDictionary dictionary) {
         this.entityDictionary = dictionary;
         registerCustomScalars();
@@ -116,7 +118,7 @@ public class GraphQLConversionUtils {
 
         Enum [] values = (Enum []) enumClazz.getEnumConstants();
 
-        GraphQLEnumType.Builder builder = newEnum().name(toValidNameName(enumClazz.getName()));
+        GraphQLEnumType.Builder builder = newEnum().name(getTypeName(enumClazz));
 
         for (Enum value : values) {
             builder.value(toValidNameName(value.name()), value);
@@ -371,7 +373,7 @@ public class GraphQLConversionUtils {
         }
 
         GraphQLObjectType.Builder objectBuilder = newObject();
-        objectBuilder.name(toValidNameName(clazz.getName()));
+        objectBuilder.name(getTypeName(clazz));
 
         for (String attribute : nonEntityDictionary.getAttributes(clazz)) {
             Class<?> attributeClass = nonEntityDictionary.getType(clazz, attribute);
@@ -417,7 +419,7 @@ public class GraphQLConversionUtils {
         }
 
         GraphQLInputObjectType.Builder objectBuilder = newInputObject();
-        objectBuilder.name(toValidNameName("_input__" + clazz.getName()));
+        objectBuilder.name(getInputTypeName(clazz));
 
         for (String attribute : nonEntityDictionary.getAttributes(clazz)) {
             log.info("Building input object attribute: {}", attribute);
@@ -473,5 +475,43 @@ public class GraphQLConversionUtils {
             inputType = classToInputObject(conversionClass);
         }
         return inputType;
+    }
+
+    private String getTypeName(Class<?> clazz) {
+        String typename;
+        if (clazz.isAnnotationPresent(GraphQLTypeName.class)) {
+            typename = clazz.getAnnotation(GraphQLTypeName.class).value();
+        } else {
+            typename = toValidNameName(clazz.getName());
+        }
+        validateNameAndAddToExistingNames(typename);
+        return typename;
+    }
+
+    private String getInputTypeName(Class<?> clazz) {
+        String typename;
+        if (clazz.isAnnotationPresent(GraphQLInputTypeName.class)) {
+            typename = clazz.getAnnotation(GraphQLInputTypeName.class).value();
+        } else {
+            typename = toValidNameName("_input__" + clazz.getName());
+        }
+        validateNameAndAddToExistingNames(typename);
+        return typename;
+    }
+
+    /**
+     * Checks if there are no invalid or conflicting names.
+     * @param name The type name
+     */
+    private void validateNameAndAddToExistingNames(String name) {
+        if (name == null || name.length() == 0 || !name.matches("[_A-Za-z][_0-9A-Za-z]*")) {
+            throw new IllegalArgumentException("The type name is invalid: " + name);
+        }
+
+        if (existingNames.contains(name)) {
+            throw new IllegalArgumentException("The type name already exists: " + name);
+        }
+
+        existingNames.add(name);
     }
 }
